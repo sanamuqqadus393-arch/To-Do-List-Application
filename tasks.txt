@@ -1,0 +1,4 @@
+work,python learning,30-3-2026,Done
+work,python learning,3-4-2026,Done
+work,reading book,3-30-2026,Not done
+personal,exercise,3-30-2026,Done
