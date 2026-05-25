@@ -1,131 +1,300 @@
-# load tasks from file
-tasks = []
+"""
+To-Do List Application
+----------------------
+A command-line task manager that supports categories, due dates,
+task completion, filtering, and persistent file storage.
+"""
 
-try:
-    with open("tasks1.txt", "r") as file:
-        for line in file:
-            category, task, due_date, status = line.strip().split(",")
-            tasks.append([category, task, due_date, status])
-except FileNotFoundError:
-    pass
+import os
+from datetime import datetime
 
 
-while True:
+TASKS_FILE = "tasks.txt"
+VALID_CATEGORIES = ["Personal", "Work", "Shopping", "Wishlist"]
+DATE_FORMAT = "%d-%m-%Y"
 
-    print("\n===== TO DO LIST MENU =====")
-    print("1 Add Task")
-    print("2 View Tasks")
-    print("3 Mark Task Completed")
-    print("4 Remove Task")
-    print("5 Show Completed Tasks")
-    print("6 Filter by Category")
-    print("7 Exit")
 
-    choice = input("Choose option: ")
+class Task:
+    """Represents a single task with a name, category, due date, and status."""
 
-    # add task
-    if choice == "1":
+    def __init__(self, name: str, category: str, due_date: str, done: bool = False):
+        self.name = name
+        self.category = category
+        self.due_date = due_date
+        self.done = done
 
-        task = input("Enter task: ")
-        due_date = input("Due date (YYYY-MM-DD): ")
+    def mark_done(self) -> None:
+        """Mark the task as completed."""
+        self.done = True
 
-        print("Choose category")
-        c = input("1 personal\n2 work\n3 shopping\n4 wishlist\n")
+    def to_file_line(self) -> str:
+        """Serialize the task to a string for file storage."""
+        status = "done" if self.done else "pending"
+        return f"{self.name}|{self.category}|{self.due_date}|{status}"
 
-        if c == "1":
-            category = "personal"
-        elif c == "2":
-            category = "work"
-        elif c == "3":
-            category = "shopping"
-        elif c == "4":
-            category = "wishlist"
-        else:
-            category = "general"
+    @classmethod
+    def from_file_line(cls, line: str) -> "Task":
+        """Deserialize a task from a file line.
 
-        status = "Not done"
+        Args:
+            line: A pipe-separated string from tasks.txt.
 
-        tasks.append([category, task, due_date, status])
-        print("Task added successfully")
+        Returns:
+            A Task instance.
 
-    # view tasks
-    elif choice == "2":
+        Raises:
+            ValueError: If the line format is invalid.
+        """
+        parts = line.strip().split("|")
+        if len(parts) != 4:
+            raise ValueError(f"Invalid task format: {line!r}")
+        name, category, due_date, status = parts
+        return cls(name, category, due_date, done=(status == "done"))
 
-        if len(tasks) == 0:
-            print("No tasks available")
-        else:
-            print("\nCurrent Tasks:")
-            for i, t in enumerate(tasks):
-                print(
-                    f"{i+1}. Category: {t[0]} | Task: {t[1]} | Due: {t[2]} | Status: {t[3]}")
+    def __str__(self) -> str:
+        status = "✅ Done" if self.done else "⏳ Pending"
+        return f"[{self.category}] {self.name} — Due: {self.due_date} | {status}"
 
-    # mark completed
-    elif choice == "3":
 
+class TaskManager:
+    """Manages a list of tasks with load, save, add, remove, and filter operations."""
+
+    def __init__(self, filepath: str = TASKS_FILE):
+        self.filepath = filepath
+        self.tasks: list[Task] = []
+        self.load_tasks()
+
+    def load_tasks(self) -> None:
+        """Load tasks from the file. Skips malformed lines silently."""
+        if not os.path.exists(self.filepath):
+            return
+        with open(self.filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        self.tasks.append(Task.from_file_line(line))
+                    except ValueError:
+                        pass  # skip corrupted lines
+
+    def save_tasks(self) -> None:
+        """Write all tasks to the file."""
+        with open(self.filepath, "w", encoding="utf-8") as f:
+            for task in self.tasks:
+                f.write(task.to_file_line() + "\n")
+
+    def add_task(self, name: str, category: str, due_date: str) -> Task:
+        """Create and store a new task.
+
+        Args:
+            name: Task description.
+            category: One of the valid categories.
+            due_date: Due date string in DD-MM-YYYY format.
+
+        Returns:
+            The newly created Task.
+        """
+        task = Task(name, category, due_date)
+        self.tasks.append(task)
+        self.save_tasks()
+        return task
+
+    def remove_task(self, index: int) -> Task:
+        """Remove a task by its 1-based index.
+
+        Args:
+            index: 1-based position of the task.
+
+        Returns:
+            The removed Task.
+
+        Raises:
+            IndexError: If the index is out of range.
+        """
+        if not (1 <= index <= len(self.tasks)):
+            raise IndexError(f"No task at position {index}.")
+        task = self.tasks.pop(index - 1)
+        self.save_tasks()
+        return task
+
+    def mark_done(self, index: int) -> Task:
+        """Mark a task as completed by its 1-based index.
+
+        Args:
+            index: 1-based position of the task.
+
+        Returns:
+            The updated Task.
+
+        Raises:
+            IndexError: If the index is out of range.
+        """
+        if not (1 <= index <= len(self.tasks)):
+            raise IndexError(f"No task at position {index}.")
+        self.tasks[index - 1].mark_done()
+        self.save_tasks()
+        return self.tasks[index - 1]
+
+    def get_pending(self) -> list[Task]:
+        """Return all tasks that are not yet done."""
+        return [t for t in self.tasks if not t.done]
+
+    def get_completed(self) -> list[Task]:
+        """Return all completed tasks."""
+        return [t for t in self.tasks if t.done]
+
+    def filter_by_category(self, category: str) -> list[Task]:
+        """Return tasks matching a given category (case-insensitive).
+
+        Args:
+            category: Category name to filter by.
+
+        Returns:
+            List of matching tasks.
+        """
+        return [t for t in self.tasks if t.category.lower() == category.lower()]
+
+
+# ─── Input helpers ────────────────────────────────────────────────────────────
+
+def get_task_index(prompt: str, max_index: int) -> int:
+    """Prompt the user for a task number and validate it."""
+    while True:
         try:
-            num = int(input("Enter task number: ")) - 1
-
-            if 0 <= num < len(tasks):
-                tasks[num][3] = "Done"
-                print("Task marked completed")
-            else:
-                print("Invalid task number")
+            value = int(input(prompt))
+            if 1 <= value <= max_index:
+                return value
+            print(f"  Please enter a number between 1 and {max_index}.")
         except ValueError:
-            print("Enter a valid number")
+            print("  Invalid input. Please enter a number.")
 
-    # remove task
-    elif choice == "4":
 
+def get_valid_category() -> str:
+    """Prompt the user to pick a category from the valid list."""
+    print("  Categories:", ", ".join(VALID_CATEGORIES))
+    while True:
+        choice = input("  Category: ").strip().title()
+        if choice in VALID_CATEGORIES:
+            return choice
+        print(f"  Invalid category. Choose from: {', '.join(VALID_CATEGORIES)}")
+
+
+def get_valid_date() -> str:
+    """Prompt the user for a date in DD-MM-YYYY format."""
+    while True:
+        date_str = input("  Due date (DD-MM-YYYY): ").strip()
         try:
-            num = int(input("Enter task number to remove: ")) - 1
-
-            if 0 <= num < len(tasks):
-                removed = tasks.pop(num)
-                print("Removed task:", removed[1])
-            else:
-                print("Invalid task number")
+            datetime.strptime(date_str, DATE_FORMAT)
+            return date_str
         except ValueError:
-            print("Enter a valid number")
-
-    # show completed tasks
-    elif choice == "5":
-
-        print("\nCompleted Tasks:")
-        found = False
-
-        for t in tasks:
-            if t[3] == "Done":
-                print(f"{t[1]} | {t[0]} | Due: {t[2]}")
-                found = True
-
-        if not found:
-            print("No completed tasks")
-
-    # filter by category
-    elif choice == "6":
-
-        cat = input("Enter category (personal/work/shopping/wishlist): ")
-        found = False
-
-        for t in tasks:
-            if t[0].lower() == cat.lower():
-                print(f"{t[1]} | Due: {t[2]} | Status: {t[3]}")
-                found = True
-
-        if not found:
-            print("No tasks in this category")
-
-    # exit
-    elif choice == "7":
-        break
-
-    else:
-        print("Invalid option")
+            print("  Invalid date. Use DD-MM-YYYY format (e.g. 30-06-2025).")
 
 
-# save tasks to file
-with open("tasks1.txt", "w") as file:
-    for t in tasks:
-        file.write(f"{t[0]},{t[1]},{t[2]},{t[3]}\n")
+# ─── Menu actions ─────────────────────────────────────────────────────────────
 
-print("Tasks saved successfully")
+def display_task_list(tasks: list[Task], title: str) -> None:
+    """Print a numbered list of tasks under a section title."""
+    print(f"\n── {title} ──")
+    if not tasks:
+        print("  (none)")
+        return
+    for i, task in enumerate(tasks, start=1):
+        print(f"  {i}. {task}")
+
+
+def handle_add(manager: TaskManager) -> None:
+    name = input("  Task name: ").strip()
+    if not name:
+        print("  Task name cannot be empty.")
+        return
+    category = get_valid_category()
+    due_date = get_valid_date()
+    task = manager.add_task(name, category, due_date)
+    print(f"  ✅ Added: {task}")
+
+
+def handle_view(manager: TaskManager) -> None:
+    display_task_list(manager.get_pending(), "Pending Tasks")
+
+
+def handle_mark_done(manager: TaskManager) -> None:
+    pending = manager.get_pending()
+    display_task_list(pending, "Pending Tasks")
+    if not pending:
+        return
+    idx = get_task_index("  Enter task number to mark as done: ", len(manager.tasks))
+    try:
+        task = manager.mark_done(idx)
+        print(f"  ✅ Marked as done: {task.name}")
+    except IndexError as e:
+        print(f"  Error: {e}")
+
+
+def handle_remove(manager: TaskManager) -> None:
+    display_task_list(manager.tasks, "All Tasks")
+    if not manager.tasks:
+        return
+    idx = get_task_index("  Enter task number to remove: ", len(manager.tasks))
+    try:
+        task = manager.remove_task(idx)
+        print(f"  🗑️  Removed: {task.name}")
+    except IndexError as e:
+        print(f"  Error: {e}")
+
+
+def handle_completed(manager: TaskManager) -> None:
+    display_task_list(manager.get_completed(), "Completed Tasks")
+
+
+def handle_filter(manager: TaskManager) -> None:
+    category = get_valid_category()
+    filtered = manager.filter_by_category(category)
+    display_task_list(filtered, f"Tasks in '{category}'")
+
+
+# ─── Main menu ────────────────────────────────────────────────────────────────
+
+MENU = {
+    "1": ("Add Task", handle_add),
+    "2": ("View Pending Tasks", handle_view),
+    "3": ("Mark Task as Done", handle_mark_done),
+    "4": ("Remove Task", handle_remove),
+    "5": ("Show Completed Tasks", handle_completed),
+    "6": ("Filter by Category", handle_filter),
+    "7": ("Exit", None),
+}
+
+
+def print_menu() -> None:
+    print("\n" + "=" * 35)
+    print("         TO-DO LIST APPLICATION")
+    print("=" * 35)
+    for key, (label, _) in MENU.items():
+        print(f"  {key}. {label}")
+    print("=" * 35)
+
+
+def run() -> None:
+    """Start the To-Do List application."""
+    manager = TaskManager()
+    print("\nWelcome to your To-Do List!")
+
+    while True:
+        print_menu()
+        choice = input("Choose an option (1-7): ").strip()
+
+        if choice not in MENU:
+            print("  Invalid option. Please choose 1–7.")
+            continue
+
+        label, action = MENU[choice]
+
+        if choice == "7":
+            print("\nGoodbye! Your tasks have been saved. 👋")
+            break
+
+        print(f"\n── {label} ──")
+        action(manager)
+
+
+if __name__ == "__main__":
+    run()
