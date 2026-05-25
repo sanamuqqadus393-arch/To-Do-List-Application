@@ -1,4 +1,5 @@
 # Python
+tasks.txt
 __pycache__/
 *.py[cod]
 *.pyo
